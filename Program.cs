@@ -1,20 +1,126 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text;
 
 namespace PackagesLexer
 {
-    public class Program
+    public class Packages : List<PackageChunk>
     {
-        public static void Main(string[] args)
+        /// <summary>
+        /// Parses Packages.bin located at <see cref="fileName"/> and creates a List of <see cref="PackageChunk"/>
+        /// </summary>
+        /// <param name="fileName">Path to Packages.bin</param>
+        public Packages(string fileName)
         {
-            //var package = new Package(File.ReadAllText("test.txt"));
-            //File.WriteAllText("test.json", JsonConvert.SerializeObject(package, Formatting.Indented));
-            //Console.Read();
+            using (var file = File.OpenRead(fileName))
+            {
+                using (var reader = new BinaryReader(file))
+                {
+                    var hash = reader.ReadBytes(0x1d);
+                    var numberOfTopStructs = reader.ReadInt32();
+                    var topstructs = new List<TopStruct>();
+                    for (var i = 0; i < numberOfTopStructs; i++)
+                    {
+                        var length = reader.ReadInt32();
+                        var tempheaderbytes = reader.ReadBytes(length);
+                        var str = Encoding.UTF8.GetString(tempheaderbytes);
+                        var unk = reader.ReadInt32();
+                        topstructs.Add(new TopStruct() { Name = str, Unknown = unk });
+                    }
+                    var totalchunksize = reader.ReadInt32();
+                    var chunks = new List<string>();
+                    for (var i = 0; i < totalchunksize; i++)
+                    {
+                        var sb = new StringBuilder();
+                        byte inbyte;
+                        while (true)
+                        {
+                            i++;
+                            inbyte = reader.ReadByte();
+                            if (inbyte == 0) break;
+                            sb.Append((char)inbyte);
+                        }
+                        i--;
+                        chunks.Add(sb.ToString());
+                    }
+                    var noOfChunks = reader.ReadInt32();
+                    if (noOfChunks != chunks.Count)
+                    {
+                        Console.WriteLine("We have mismatch in number of chunks and expected chunks. {0} != {1}", chunks.Count, noOfChunks);
+                    }
+                    for (var i = 0; i < noOfChunks; i++)
+                    {
+                        var length = reader.ReadInt32();
+                        var tempbytes = reader.ReadBytes(length);
+                        var path = Encoding.UTF8.GetString(tempbytes);
+                        length = reader.ReadInt32();
+                        tempbytes = reader.ReadBytes(length);
+                        var name = Encoding.UTF8.GetString(tempbytes);
+                        reader.ReadBytes(5);
+                        length = reader.ReadInt32();
+                        tempbytes = reader.ReadBytes(length);
+                        var basename = Encoding.UTF8.GetString(tempbytes);
+                        reader.ReadInt32();
+                        var package = new PackageChunk
+                        {
+                            Name = name,
+                            BasePackage = basename,
+                            RawChunk = chunks[i],
+                            HeaderPath = path
+                        };
+                        try
+                        {
+                            package.ParsedChunk = new Package(package.RawChunk);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine("Error parsing chunk.");
+                        }
+                        this.Add(package);
+                    }
+                    chunks.Clear();
+                }
+            }
         }
     }
+
+    internal class TopStruct
+    {
+        public string Name;
+        public int Unknown;
+    }
+
+    /// <summary>
+    /// Holds data about a package chunk.
+    /// </summary>
+    public class PackageChunk
+    {
+        /// <summary>
+        /// The raw string package.
+        /// </summary>
+        public string RawChunk;
+        /// <summary>
+        /// The name of the package.
+        /// </summary>
+        public string Name;
+        /// <summary>
+        /// Name/Path+Name to the base package.
+        /// </summary>
+        /// <remarks>
+        /// If <see cref="BasePackage"/> is only the name, assume the same header path as this package.
+        /// </remarks>
+        public string BasePackage;
+        /// <summary>
+        /// The header path that this package is located in.
+        /// </summary>
+        public string HeaderPath;
+        /// <summary>
+        /// A dictionary that holds key-value pairs of the data in this package.
+        /// </summary>
+        public Package ParsedChunk;
+    }
+
     public class Package : Dictionary<string, object>
     {
         private readonly string[] rawLines;
