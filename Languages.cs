@@ -13,6 +13,7 @@ namespace PackagesLexer
     {
         /// <summary>
         /// Parses <see cref="fileName"/> which should be a Languages.bin file and creates a dictionary with localization strings
+        /// For newer versions of the format, strings are encrypted and this will return "--ENCRYPTED BLOCK--"
         /// </summary>
         /// <param name="fileName">Path to Languages.bin</param>
         public Languages(string fileName)
@@ -21,7 +22,14 @@ namespace PackagesLexer
             {
                 using (var reader = new BinaryReader(file))
                 {
-                    reader.ReadBytes(0x1D);   //Unknown bytes
+                    reader.ReadBytes(16);   //hash
+                    reader.ReadInt32();     //unknown
+                    var formatVersion = reader.ReadInt32();
+                    if (formatVersion >= 0x1D) //encrypted
+                    {
+                        Console.WriteLine("Warning, text is encrypted.");
+                    }
+                    reader.ReadBytes(5);    //unknown
                     var numberOfLanguages = reader.ReadInt32();
                     for (int i = 0; i < numberOfLanguages; i++)
                     {
@@ -46,7 +54,10 @@ namespace PackagesLexer
                             var lengthOfSuffix = reader.ReadInt32();
                             var tempsuffixbytes = reader.ReadBytes(lengthOfSuffix);
                             var headerSuffix = Encoding.UTF8.GetString(tempsuffixbytes);
-                            this[headerStr + headerSuffix] = stringList[i];
+                            if (formatVersion >= 0x1D)
+                                this[headerStr + headerSuffix] = "--ENCRYPTED BLOCK--";
+                            else
+                                this[headerStr + headerSuffix] = stringList[i];
                             reader.ReadBytes(11);   //Unknown
                         }
                     }
